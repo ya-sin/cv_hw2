@@ -8,6 +8,7 @@ fn1 = './data/Bird1.jpg'
 fn2 = './data/Bird2.jpg'
 fn3 = './data/bgSub.mp4'
 fn4 = './data/featureTracking.mp4'
+fn5 = './data/feature.flv'
 
 def fun1_1():
   bird1 = cv2.imread(fn1)
@@ -87,36 +88,135 @@ def fun1_3():
 
 def fun2_1():
   cap = cv2.VideoCapture(fn3)
-  # fgbg = cv2.bgsegm.createBackgroundSubtractorMOG()
-  kernel = cv2.getStructuringElement(cv2.MORPH_CROSS,(7,7))
-  fgbg = cv2.bgsegm.createBackgroundSubtractorGMG(50,0.9)
+  fgbg = cv2.bgsegm.createBackgroundSubtractorMOG(50, 3, 0.8,0)
+
   while(1):
       ret, frame = cap.read()
       fgmask = fgbg.apply(frame)
-      fgmask = cv2.morphologyEx(fgmask, cv2.MORPH_OPEN, kernel)
       cv2.imshow('test1',frame)
-      cv2.imshow('frame',fgmask)
+      cv2.imshow('test2',fgmask)
       k = cv2.waitKey(30) & 0xff
       if k == 27:
           break
   cap.release()
   cv2.destroyAllWindows()
-  # while(1):
-  #     ret, frame = cap.read()
-  #     fgmask = fgbg.apply(frame)
-  #     cv2.imshow('test1',frame)
-  #     cv2.imshow('test2',fgmask)
-  #     k = cv2.waitKey(30) & 0xff
-  #     if k == 27:
-  #         break
-  # cap.release()
-  # cv2.destroyAllWindows()
 
 def fun3_1():
-  pass
+  cap = cv2.VideoCapture(fn4,0)
+
+  ret, frame = cap.read()
+  if not ret:
+      pass
+
+  frame = cv2.convertScaleAbs(frame)
+
+  # setting parameter
+  param = cv2.SimpleBlobDetector_Params()
+
+  param.minDistBetweenBlobs = 18
+  param.filterByConvexity = True
+  param.filterByCircularity = True
+  param.minCircularity = 0.84
+  param.filterByArea = True
+  param.minArea = 30
+  param.maxArea = 80
+
+  # detect keypoint
+  detect = cv2.SimpleBlobDetector_create(param)
+  kp = detect.detect(frame)
+
+  img = frame.copy()
+
+  # show squares on images
+  if(ret):
+      for i in range(0,len(kp)):
+          x,y = np.int(kp[i].pt[0]),np.int(kp[i].pt[1])
+          size = np.int(kp[i].size)
+          if size > 1:
+              size = np.int(size/2)
+          img = cv2.rectangle(img, (x-size,y-size), (x+size,y+size), (0,0,255), thickness=-1)
+      cv2.imshow('Tracking whole video', img)
+  else:
+      pass
+  cap.release()
+
 
 def fun3_2():
-  pass
+  # Seven points
+  cap = cv2.VideoCapture(fn5)
+
+  # Parameters for lucas kanade optical flow
+  lk_params = dict( winSize  = (21,21),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+  # Obtain the first frame
+  ret, previous_frame = cap.read()
+  if not ret:
+      pass
+
+  previous_frame = cv2.convertScaleAbs(previous_frame)
+
+  # setting parameter
+  params = cv2.SimpleBlobDetector_Params()
+  params.minDistBetweenBlobs = 18
+  params.filterByConvexity = True
+
+  params.filterByCircularity = True
+  params.minCircularity = 0.84
+
+  params.filterByArea = True
+  params.minArea = 30
+  params.maxArea = 80
+
+  # detect keypoint
+  detect = cv2.SimpleBlobDetector_create(params)
+  kp = detect.detect(previous_frame)
+  p0 = []
+  a0 = np.array([[np.float32(kp[0].pt[0]),np.float32(kp[0].pt[1])]])
+  a1 = np.array([[np.float32(kp[1].pt[0]),np.float32(kp[1].pt[1])]])
+  a2 = np.array([[np.float32(kp[2].pt[0]),np.float32(kp[2].pt[1])]])
+  a3 = np.array([[np.float32(kp[3].pt[0]),np.float32(kp[3].pt[1])]])
+  a4 = np.array([[np.float32(kp[4].pt[0]),np.float32(kp[4].pt[1])]])
+  a5 = np.array([[np.float32(kp[5].pt[0]),np.float32(kp[5].pt[1])]])
+  a6 = np.array([[np.float32(kp[6].pt[0]),np.float32(kp[6].pt[1])]])
+  p0 = np.array([a0, a1, a2, a3, a4, a5, a6])
+
+  previous_gray = cv2.cvtColor(previous_frame, cv2.COLOR_BGR2GRAY)
+
+  # Create a mask image for drawing purposes
+  mask = np.zeros_like(previous_frame)
+  while(1):
+      ret,frame = cap.read()
+      gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+      # calculate optical flow
+      p1, st, err = cv2.calcOpticalFlowPyrLK(previous_gray, gray_frame, p0, None, **lk_params)
+
+      # Select good points
+      good_new = p1[st==1]
+      good_old = p0[st==1]
+
+      # draw the tracks
+      for i,(new,old) in enumerate(zip(good_new,good_old)):
+          a,b = new.ravel()
+          c,d = old.ravel()
+          mask = cv2.line(mask, (a,b),(c,d), (0, 0, 255), 2)
+          frame = cv2.circle(frame,(a,b),5,(0,0,255),-1)
+      img = cv2.add(frame,mask)
+
+      cv2.imshow('frame',img)
+      k = cv2.waitKey(30) & 0xff
+      if k == 27:
+          break
+
+      # Now update the previous frame and previous points
+      previous_gray = gray_frame.copy()
+      p0 = good_new.reshape(-1,1,2)
+
+  cv2.destroyAllWindows()
+  cap.release()
+
 main_window = tk.Tk()
 main_window.geometry('1080x720')
 main_window.title('HW2')
